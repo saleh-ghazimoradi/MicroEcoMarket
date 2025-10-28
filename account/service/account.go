@@ -34,6 +34,9 @@ func (a *accountService) GetAccountById(ctx context.Context, id string) (*domain
 }
 
 func (a *accountService) GetAccounts(ctx context.Context, input *dto.AccountQuery) ([]*domain.Account, error) {
+	if input.Limit > 100 || (input.Offset == 0 && input.Limit == 0) {
+		input.Limit = 100
+	}
 	return a.accountRepository.GetAccounts(ctx, input)
 }
 
