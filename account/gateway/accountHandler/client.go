@@ -9,12 +9,19 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type GRPCAccountClient struct {
+type GRPCAccountClient interface {
+	CreateAccount(ctx context.Context, input *dto.Account) (*domain.Account, error)
+	GetAccountById(ctx context.Context, id string) (*domain.Account, error)
+	GetAccounts(ctx context.Context, input *dto.AccountQuery) ([]*domain.Account, error)
+	Close() error
+}
+
+type gRPCAccountClient struct {
 	conn   *grpc.ClientConn
 	client proto.AccountServiceClient
 }
 
-func (g *GRPCAccountClient) CreateAccount(ctx context.Context, input *dto.Account) (*domain.Account, error) {
+func (g *gRPCAccountClient) CreateAccount(ctx context.Context, input *dto.Account) (*domain.Account, error) {
 	req := &proto.CreateAccountRequest{Name: input.Name}
 	resp, err := g.client.CreateAccount(ctx, req)
 	if err != nil {
@@ -27,7 +34,7 @@ func (g *GRPCAccountClient) CreateAccount(ctx context.Context, input *dto.Accoun
 	}, nil
 }
 
-func (g *GRPCAccountClient) GetAccountById(ctx context.Context, id string) (*domain.Account, error) {
+func (g *gRPCAccountClient) GetAccountById(ctx context.Context, id string) (*domain.Account, error) {
 	req := &proto.GetAccountRequest{Id: id}
 	resp, err := g.client.GetAccountById(ctx, req)
 	if err != nil {
@@ -39,7 +46,7 @@ func (g *GRPCAccountClient) GetAccountById(ctx context.Context, id string) (*dom
 	}, nil
 }
 
-func (g *GRPCAccountClient) GetAccounts(ctx context.Context, input *dto.AccountQuery) ([]*domain.Account, error) {
+func (g *gRPCAccountClient) GetAccounts(ctx context.Context, input *dto.AccountQuery) ([]*domain.Account, error) {
 	req := &proto.GetAccountsRequest{Limit: input.Limit, Offset: input.Offset}
 	resp, err := g.client.GetAccounts(ctx, req)
 	if err != nil {
@@ -56,17 +63,17 @@ func (g *GRPCAccountClient) GetAccounts(ctx context.Context, input *dto.AccountQ
 	return accounts, nil
 }
 
-func (g *GRPCAccountClient) Close() error {
+func (g *gRPCAccountClient) Close() error {
 	return g.conn.Close()
 }
 
-func NewGRPCClient(addr string) (*GRPCAccountClient, error) {
+func NewGRPCClient(addr string) (GRPCAccountClient, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 	accountServiceClient := proto.NewAccountServiceClient(conn)
-	return &GRPCAccountClient{
+	return &gRPCAccountClient{
 		conn:   conn,
 		client: accountServiceClient,
 	}, nil

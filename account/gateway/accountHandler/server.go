@@ -9,13 +9,21 @@ import (
 	"net"
 )
 
-type GRPCAccountServer struct {
+type GRPCAccountServer interface {
+	CreateAccount(ctx context.Context, req *proto.CreateAccountRequest) (*proto.CreateAccountResponse, error)
+	GetAccountById(ctx context.Context, req *proto.GetAccountRequest) (*proto.GetAccountResponse, error)
+	GetAccounts(ctx context.Context, req *proto.GetAccountsRequest) (*proto.GetAccountsResponse, error)
+	Serve(addr string) error
+	Stop() error
+}
+
+type gRPCAccountServer struct {
 	accountService service.AccountService
 	server         *grpc.Server
 	proto.UnimplementedAccountServiceServer
 }
 
-func (g *GRPCAccountServer) CreateAccount(ctx context.Context, req *proto.CreateAccountRequest) (*proto.CreateAccountResponse, error) {
+func (g *gRPCAccountServer) CreateAccount(ctx context.Context, req *proto.CreateAccountRequest) (*proto.CreateAccountResponse, error) {
 	account, err := g.accountService.CreateAccount(ctx, &dto.Account{
 		Name: req.Name,
 	})
@@ -31,7 +39,7 @@ func (g *GRPCAccountServer) CreateAccount(ctx context.Context, req *proto.Create
 	}, nil
 }
 
-func (g *GRPCAccountServer) GetAccountById(ctx context.Context, req *proto.GetAccountRequest) (*proto.GetAccountResponse, error) {
+func (g *gRPCAccountServer) GetAccountById(ctx context.Context, req *proto.GetAccountRequest) (*proto.GetAccountResponse, error) {
 	account, err := g.accountService.GetAccountById(ctx, req.Id)
 	if err != nil {
 		return nil, err
@@ -45,7 +53,7 @@ func (g *GRPCAccountServer) GetAccountById(ctx context.Context, req *proto.GetAc
 	}, nil
 }
 
-func (g *GRPCAccountServer) GetAccounts(ctx context.Context, req *proto.GetAccountsRequest) (*proto.GetAccountsResponse, error) {
+func (g *gRPCAccountServer) GetAccounts(ctx context.Context, req *proto.GetAccountsRequest) (*proto.GetAccountsResponse, error) {
 	accounts, err := g.accountService.GetAccounts(ctx, &dto.AccountQuery{
 		Limit:  req.Limit,
 		Offset: req.Offset,
@@ -67,25 +75,25 @@ func (g *GRPCAccountServer) GetAccounts(ctx context.Context, req *proto.GetAccou
 	}, nil
 }
 
-func (g *GRPCAccountServer) Serve(addr string) error {
+func (g *gRPCAccountServer) Serve(addr string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	grpcServer := grpc.NewServer()
-	proto.RegisterAccountServiceServer(grpcServer, g)
-	return grpcServer.Serve(lis)
+	g.server = grpc.NewServer()
+	proto.RegisterAccountServiceServer(g.server, g)
+	return g.server.Serve(lis)
 }
 
-func (g *GRPCAccountServer) Stop() error {
+func (g *gRPCAccountServer) Stop() error {
 	if g.server != nil {
 		g.server.GracefulStop()
 	}
 	return nil
 }
 
-func NewGRPCServer(accountService service.AccountService) *GRPCAccountServer {
-	return &GRPCAccountServer{
+func NewGRPCServer(accountService service.AccountService) GRPCAccountServer {
+	return &gRPCAccountServer{
 		accountService: accountService,
 	}
 }
