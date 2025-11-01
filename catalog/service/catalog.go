@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/catalog/domain"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/catalog/dto"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/catalog/repository"
@@ -21,16 +22,17 @@ type catalogService struct {
 }
 
 func (c *catalogService) CreateCatalog(ctx context.Context, input *dto.Catalog) (*domain.Catalog, error) {
-	var catalog domain.Catalog
-	if err := c.catalogRepository.CreateCatalog(ctx, &domain.Catalog{
+	catalog := &domain.Catalog{
 		Id:          ksuid.New().String(),
 		Name:        input.Name,
 		Description: input.Description,
 		Price:       input.Price,
-	}); err != nil {
-		return nil, err
 	}
-	return &catalog, nil
+
+	if err := c.catalogRepository.CreateCatalog(ctx, catalog); err != nil {
+		return nil, fmt.Errorf("create catalog: %w", err)
+	}
+	return catalog, nil
 }
 
 func (c *catalogService) GetCatalogById(ctx context.Context, id string) (*domain.Catalog, error) {
