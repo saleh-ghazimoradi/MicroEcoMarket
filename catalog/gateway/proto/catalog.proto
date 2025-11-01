@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+option go_package = "gateway/proto";
+
+package catalog;
+
+message Catalog {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+}
+
+message CreateCatalogRequest {
+  string name = 1;
+  string description = 2;
+  double price = 3;
+}
+
+message CreateCatalogResponse {
+  Catalog catalog = 1;
+}
+
+message GetCatalogRequest {
+  string id = 1;
+}
+
+message GetCatalogResponse {
+  Catalog catalog = 1;
+}
+
+message GetCatalogsRequest {
+  uint64 limit = 1;
+  uint64 offset = 2;
+  repeated string ids = 3;
+  string query = 4;
+}
+
+message GetCatalogsResponse {
+  repeated Catalog catalogs = 1;
+}
+
+service CatalogService {
+  rpc CreateCatalog (CreateCatalogRequest) returns (CreateCatalogResponse){}
+  rpc GetCatalogById(GetCatalogRequest) returns (GetCatalogResponse) {}
+  rpc GetCatalogs(GetCatalogsRequest) returns (GetCatalogsResponse) {}
+}
