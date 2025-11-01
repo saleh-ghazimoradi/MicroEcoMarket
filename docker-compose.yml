@@ -1,0 +1,69 @@
+services:
+  account-db:
+    image: postgres:latest
+    container_name: ${POSTGRES_NAME}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          memory: 512M
+    environment:
+      POSTGRES_DB: ${POSTGRES_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - account-db-data:/var/lib/postgresql/data
+    ports:
+      - ${POSTGRES_PORT}:5432
+
+  catalog-db:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.5
+    container_name: ${ELASTICSEARCH_CONTAINER}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          memory: 1G
+    environment:
+      - discovery.type=single-node
+      - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g  # Limits heap to reduce GC/CPU spikes
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - ${ELASTICSEARCH_PORT}:9200
+
+  order-db:
+    image: postgres:latest
+    container_name: ${POSTGRESQL_NAME}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          memory: 512M
+    environment:
+      POSTGRES_DB: ${POSTGRESQL_NAME}
+      POSTGRES_USER: ${POSTGRESQL_USER}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    ports:
+      - ${POSTGRESQL_PORT}:5432
+
+volumes:
+  account-db-data:
+  elasticsearch-data:
+  order-db-data:
