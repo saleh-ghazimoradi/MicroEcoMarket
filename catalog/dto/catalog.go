@@ -7,8 +7,10 @@ type Catalog struct {
 }
 
 type CatalogQuery struct {
-	Limit  uint64 `json:"limit"`
-	Offset uint64 `json:"offset"`
+	Limit  uint64   `json:"limit"`
+	Offset uint64   `json:"offset"`
+	Query  string   `json:"query,omitezero"`
+	Ids    []string `json:"ids,omitezero"`
 }
 
 type SearchCatalog struct {
