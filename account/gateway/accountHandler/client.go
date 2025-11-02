@@ -67,7 +67,7 @@ func (g *gRPCAccountClient) Close() error {
 	return g.conn.Close()
 }
 
-func NewGRPCClient(addr string) (GRPCAccountClient, error) {
+func NewGRPCAccountClient(addr string) (GRPCAccountClient, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
