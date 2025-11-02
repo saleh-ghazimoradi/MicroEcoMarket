@@ -5,6 +5,8 @@ import (
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/order/domain"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/order/dto"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/order/repository"
+	"github.com/segmentio/ksuid"
+	"time"
 )
 
 type OrderService interface {
@@ -17,11 +19,26 @@ type orderService struct {
 }
 
 func (o *orderService) CreateOrder(ctx context.Context, input *dto.Order) (*domain.Order, error) {
-	return nil, nil
+	order := &domain.Order{
+		Id:        ksuid.New().String(),
+		CreatedAt: time.Now().UTC(),
+		AccountId: input.AccountId,
+		Catalogs:  make([]*domain.OrderedCatalog, 0),
+	}
+
+	order.TotalPrice = 0.0
+	for _, catalog := range input.Catalogs {
+		order.TotalPrice += catalog.Price * float64(catalog.Quantity)
+	}
+
+	if err := o.orderRepository.CreateOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	return order, nil
 }
 
 func (o *orderService) GetOrdersForAccount(ctx context.Context, accountId string) ([]*domain.Order, error) {
-	return nil, nil
+	return o.orderRepository.GetOrdersForAccount(ctx, accountId)
 }
 
 func NewOrderService(orderRepository repository.OrderRepository) OrderService {
