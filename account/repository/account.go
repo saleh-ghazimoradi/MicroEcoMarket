@@ -21,13 +21,11 @@ type accountRepository struct {
 }
 
 func (a *accountRepository) CreateAccount(ctx context.Context, account *domain.Account) error {
-	query := `INSERT INTO account (name) VALUES ($1) RETURNING id`
+	query := `INSERT INTO account(id,name) VALUES ($1,$2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := a.dbWrite.QueryRowContext(ctx, query, account.Name).Scan(&account.Id); err != nil {
-		return err
-	}
-	return nil
+	_, err := a.dbWrite.ExecContext(ctx, query, account.Id, account.Name)
+	return err
 }
 
 func (a *accountRepository) GetAccountById(ctx context.Context, id string) (*domain.Account, error) {

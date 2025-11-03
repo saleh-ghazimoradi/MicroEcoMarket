@@ -113,7 +113,7 @@ func (g *gRPCOrderClient) Close() error {
 	return g.conn.Close()
 }
 
-func NewGRPCOrderHandler(addr string) (GRPCOrderClient, error) {
+func NewGRPCOrderClient(addr string) (GRPCOrderClient, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
