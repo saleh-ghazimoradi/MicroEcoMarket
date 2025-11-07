@@ -6,6 +6,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -123,6 +124,11 @@ func (r *queryResolver) Products(ctx context.Context, pagination *model.Paginati
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	if r.CatalogClient == nil {
+		log.Println("CatalogClient is nil!")
+		return nil, fmt.Errorf("internal system error")
+	}
+
 	if id != nil {
 		cat, err := r.CatalogClient.GetCatalogById(ctx, *id)
 		if err != nil {
@@ -153,6 +159,7 @@ func (r *queryResolver) Products(ctx context.Context, pagination *model.Paginati
 		Query:  q,
 		Ids:    nil,
 	})
+
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -167,6 +174,7 @@ func (r *queryResolver) Products(ctx context.Context, pagination *model.Paginati
 			Price:       cat.Price,
 		})
 	}
+
 	return catalog, nil
 }
 

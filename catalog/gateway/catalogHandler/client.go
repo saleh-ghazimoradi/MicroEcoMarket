@@ -56,7 +56,7 @@ func (g *gRPCCatalogClient) GetCatalogs(ctx context.Context, input *dto.CatalogQ
 	if err != nil {
 		return nil, err
 	}
-	catalogs := make([]*domain.Catalog, len(resp.Catalogs))
+	catalogs := make([]*domain.Catalog, 0, len(resp.Catalogs))
 	for _, catalog := range resp.Catalogs {
 		catalogs = append(catalogs, &domain.Catalog{
 			Id:          catalog.Id,
