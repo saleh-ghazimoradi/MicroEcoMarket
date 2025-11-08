@@ -23,12 +23,19 @@ func (o *orderService) CreateOrder(ctx context.Context, input *dto.Order) (*doma
 		Id:        ksuid.New().String(),
 		CreatedAt: time.Now().UTC(),
 		AccountId: input.AccountId,
-		Catalogs:  make([]*domain.OrderedCatalog, 0),
+		Catalogs:  make([]*domain.OrderedCatalog, len(input.Catalogs)),
 	}
 
 	order.TotalPrice = 0.0
-	for _, catalog := range input.Catalogs {
+	for i, catalog := range input.Catalogs {
 		order.TotalPrice += catalog.Price * float64(catalog.Quantity)
+		order.Catalogs[i] = &domain.OrderedCatalog{
+			Id:          catalog.Id,
+			Name:        catalog.Name,
+			Description: catalog.Description,
+			Price:       catalog.Price,
+			Quantity:    catalog.Quantity,
+		}
 	}
 
 	if err := o.orderRepository.CreateOrder(ctx, order); err != nil {

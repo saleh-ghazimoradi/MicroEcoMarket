@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"github.com/lib/pq"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/order/domain"
+	"time"
 )
 
 type OrderRepository interface {
@@ -70,82 +71,85 @@ func (o *orderRepository) CreateOrder(ctx context.Context, order *domain.Order) 
 }
 
 func (o *orderRepository) GetOrdersForAccount(ctx context.Context, accountId string) ([]*domain.Order, error) {
-	rows, err := o.dbRead.QueryContext(
-		ctx,
-		`SELECT
-			 o.id,
-			 o.created_at,
-			 o.account_id,
-			 o.total_price::money::numeric::float8,
-			 oc.catalog_id,
-			 oc.quantity,
-			 c.name,
-			 c.description,
-			 c.price::money::numeric::float8
-		   FROM "order" o 
-		   JOIN order_catalog oc ON (o.id = oc.order_id)
-		   JOIN catalogs c ON (oc.catalog_id = c.id)
-		   WHERE o.account_id = $1
-		   ORDER BY o.id`,
-		accountId,
-	)
-
+	rows, err := o.dbRead.QueryContext(ctx, `
+SELECT
+  o.id,
+  o.created_at,
+  o.account_id,
+  o.total_price::money::numeric::float8,
+  oc.catalog_id,
+  oc.quantity
+FROM "order" o
+LEFT JOIN order_catalog oc ON o.id = oc.order_id
+WHERE o.account_id = $1
+ORDER BY o.id;
+`, accountId)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var orders []*domain.Order
-	var order domain.Order
-	lastOrder := domain.Order{}
-	var orderedCatalog domain.OrderedCatalog
+	var currOrder *domain.Order
+	var currOrderID string
 	var catalogs []*domain.OrderedCatalog
 
 	for rows.Next() {
-		if err = rows.Scan(
-			&order.Id,
-			&order.CreatedAt,
-			&order.AccountId,
-			&order.TotalPrice,
-			&orderedCatalog.Id,
-			&orderedCatalog.Quantity,
-			&orderedCatalog.Name,
-			&orderedCatalog.Description,
-			&orderedCatalog.Price,
-		); err != nil {
+		var (
+			orderID    string
+			createdAt  time.Time
+			accountID  string
+			totalPrice float64
+			catalogID  sql.NullString
+			quantity   sql.NullInt64
+		)
+
+		if err := rows.Scan(&orderID, &createdAt, &accountID, &totalPrice, &catalogID, &quantity); err != nil {
 			return nil, err
 		}
 
-		if lastOrder.Id != "" && lastOrder.Id != order.Id {
-			newOrder := &domain.Order{
-				Id:         lastOrder.Id,
-				AccountId:  lastOrder.AccountId,
-				CreatedAt:  lastOrder.CreatedAt,
-				TotalPrice: lastOrder.TotalPrice,
-				Catalogs:   catalogs,
+		// detect a new order boundary
+		if currOrderID == "" || currOrderID != orderID {
+			// push previous order if exists
+			if currOrder != nil {
+				currOrder.Catalogs = catalogs
+				orders = append(orders, currOrder)
 			}
-			orders = append(orders, newOrder)
-			catalogs = []*domain.OrderedCatalog{}
+
+			currOrderID = orderID
+			catalogs = make([]*domain.OrderedCatalog, 0)
+			currOrder = &domain.Order{
+				Id:         orderID,
+				CreatedAt:  createdAt,
+				AccountId:  accountID,
+				TotalPrice: totalPrice,
+				Catalogs:   nil,
+			}
 		}
 
-		catalogs = append(catalogs, &orderedCatalog)
-		lastOrder = order
-	}
-
-	if lastOrder.Id != "" {
-		newOrder := &domain.Order{
-			Id:         lastOrder.Id,
-			AccountId:  lastOrder.AccountId,
-			CreatedAt:  lastOrder.CreatedAt,
-			TotalPrice: lastOrder.TotalPrice,
-			Catalogs:   catalogs,
+		// append ordered product if exists
+		if catalogID.Valid {
+			q := uint32(0)
+			if quantity.Valid {
+				q = uint32(quantity.Int64)
+			}
+			catalogs = append(catalogs, &domain.OrderedCatalog{
+				Id:       catalogID.String,
+				Quantity: q,
+			})
 		}
-		orders = append(orders, newOrder)
 	}
 
-	if err = rows.Err(); err != nil {
+	// push the last order
+	if currOrder != nil {
+		currOrder.Catalogs = catalogs
+		orders = append(orders, currOrder)
+	}
+
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return orders, nil
 }
 
