@@ -80,7 +80,7 @@ func (g *gRPCCatalogServer) GetCatalogs(ctx context.Context, req *proto.GetCatal
 	if err != nil {
 		return nil, err
 	}
-	catalogs := make([]*proto.Catalog, len(res))
+	catalogs := make([]*proto.Catalog, 0, len(res))
 	for _, c := range res {
 		catalogs = append(catalogs, &proto.Catalog{
 			Id:          c.Id,
