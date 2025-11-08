@@ -13,7 +13,43 @@ import (
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/account/dto"
 	catalogDTO "github.com/saleh-ghazimoradi/MircoEcoMarket/catalog/dto"
 	"github.com/saleh-ghazimoradi/MircoEcoMarket/gateway/graph/model"
+	orderDTO "github.com/saleh-ghazimoradi/MircoEcoMarket/order/dto"
 )
+
+func (r *accountResolver) Orders(ctx context.Context, obj *model.Account) ([]*model.Order, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	orders, err := r.OrderClient.GetOrdersForAccount(ctx, obj.ID)
+	if err != nil {
+		log.Printf("Error fetching orders for account %s: %v", obj.ID, err)
+		return nil, err
+	}
+
+	// No need to fetch catalogs again—use pre-enriched o.Catalogs
+	var result []*model.Order
+	for _, o := range orders {
+		var products []*model.OrderedProduct
+		for _, c := range o.Catalogs {
+			products = append(products, &model.OrderedProduct{
+				ID:          c.Id,
+				Name:        c.Name, // From gRPC enrichment
+				Description: c.Description,
+				Price:       c.Price,
+				Quantity:    int32(c.Quantity),
+			})
+		}
+		result = append(result, &model.Order{
+			ID:         o.Id,
+			AccountID:  o.AccountId,
+			CreatedAt:  o.CreatedAt,
+			TotalPrice: o.TotalPrice,
+			Products:   products,
+		})
+	}
+
+	return result, nil
+}
 
 // CreateAccount is the resolver for the createAccount field.
 func (r *mutationResolver) CreateAccount(ctx context.Context, account model.AccountInput) (*model.Account, error) {
@@ -56,26 +92,72 @@ func (r *mutationResolver) CreateProduct(ctx context.Context, product model.Cata
 
 // CreateOrder is the resolver for the createOrder field.
 func (r *mutationResolver) CreateOrder(ctx context.Context, order model.OrderInput) (*model.Order, error) {
-	//ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	//defer cancel()
-	//
-	//var products []*model.OrderedProduct
-	//for _, product := range order.Products {
-	//	if product.Quantity <= 0 {
-	//		return nil, errors.New("quantity must be greater than zero")
-	//	}
-	//	products = append(products, &model.OrderedProduct{
-	//		ID:       product.ID,
-	//		Quantity: product.Quantity,
-	//	})
-	//}
-	//
-	//o, err := r.OrderClient.CreateOrder(ctx, &orderDTO.Order{
-	//	AccountId: order.AccountID,
-	//})
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-	return nil, nil
+	if order.AccountID == "" {
+		return nil, fmt.Errorf("account ID is required")
+	}
+	if len(order.Products) == 0 {
+		return nil, fmt.Errorf("order must contain at least one product")
+	}
 
+	// Convert GraphQL products to OrderDTO OrderedCatalogs
+	var orderedCatalogs []*orderDTO.OrderedCatalog
+	var catalogIDs []string
+	for _, p := range order.Products {
+		if p.Quantity <= 0 {
+			return nil, fmt.Errorf("quantity for product %s must be greater than zero", p.ID)
+		}
+		orderedCatalogs = append(orderedCatalogs, &orderDTO.OrderedCatalog{
+			Id:       p.ID,
+			Quantity: uint32(p.Quantity),
+		})
+		catalogIDs = append(catalogIDs, p.ID)
+	}
+
+	// Send CreateOrder gRPC request
+	o, err := r.OrderClient.CreateOrder(ctx, &orderDTO.Order{
+		AccountId: order.AccountID,
+		Catalogs:  orderedCatalogs,
+	})
+	if err != nil {
+		log.Printf("Error creating order: %v", err)
+		return nil, err
+	}
+
+	// Fetch full catalog info from Catalog service
+	catalogs, err := r.CatalogClient.GetCatalogs(ctx, &catalogDTO.CatalogQuery{
+		Ids: catalogIDs,
+	})
+	if err != nil {
+		log.Printf("Error fetching catalogs: %v", err)
+		return nil, err
+	}
+
+	// Map catalog info to GraphQL model
+	var products []*model.OrderedProduct
+	for _, c := range o.Catalogs {
+		for _, cat := range catalogs {
+			if cat.Id == c.Id {
+				products = append(products, &model.OrderedProduct{
+					ID:          c.Id,
+					Name:        cat.Name,
+					Description: cat.Description,
+					Price:       cat.Price,
+					Quantity:    int32(c.Quantity),
+				})
+				break
+			}
+		}
+	}
+
+	return &model.Order{
+		ID:         o.Id,
+		TotalPrice: o.TotalPrice,
+		CreatedAt:  o.CreatedAt,
+		Products:   products,
+	}, nil
 }
 
 // Accounts is the resolver for the accounts field.
@@ -180,36 +262,69 @@ func (r *queryResolver) Products(ctx context.Context, pagination *model.Paginati
 
 // Orders is the resolver for the orders field.
 func (r *queryResolver) Orders(ctx context.Context, order model.OrderInput) ([]*model.Order, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	// Fetch orders for the account
 	orders, err := r.OrderClient.GetOrdersForAccount(ctx, order.AccountID)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Error fetching orders for account %s: %v", order.AccountID, err)
 		return nil, err
 	}
 
-	var ords []*model.Order
-	for _, ord := range orders {
-		var catalogs []*model.OrderedProduct
-		for _, cat := range ord.Catalogs {
-			catalogs = append(catalogs, &model.OrderedProduct{
-				ID:          cat.Id,
-				Name:        cat.Name,
-				Description: cat.Description,
-				Price:       cat.Price,
-				Quantity:    int32(cat.Quantity),
-			})
+	// Collect catalog IDs
+	catalogIdMap := make(map[string]bool)
+	for _, o := range orders {
+		for _, c := range o.Catalogs {
+			catalogIdMap[c.Id] = true
 		}
-		ords = append(ords, &model.Order{
-			ID:         ord.Id,
-			CreatedAt:  ord.CreatedAt,
-			TotalPrice: ord.TotalPrice,
-			Products:   catalogs,
+	}
+	var catalogIDs []string
+	for id := range catalogIdMap {
+		catalogIDs = append(catalogIDs, id)
+	}
+
+	// Fetch full catalog details
+	catalogs, err := r.CatalogClient.GetCatalogs(ctx, &catalogDTO.CatalogQuery{
+		Ids: catalogIDs,
+	})
+	if err != nil {
+		log.Printf("Error fetching catalogs for orders: %v", err)
+		return nil, err
+	}
+
+	// Map orders + products
+	var result []*model.Order
+	for _, o := range orders {
+		var products []*model.OrderedProduct
+		for _, c := range o.Catalogs {
+			for _, cat := range catalogs {
+				if cat.Id == c.Id {
+					products = append(products, &model.OrderedProduct{
+						ID:          c.Id,
+						Name:        cat.Name,
+						Description: cat.Description,
+						Price:       cat.Price,
+						Quantity:    int32(c.Quantity),
+					})
+					break
+				}
+			}
+		}
+		result = append(result, &model.Order{
+			ID:         o.Id,
+			AccountID:  o.AccountId,
+			CreatedAt:  o.CreatedAt,
+			TotalPrice: o.TotalPrice,
+			Products:   products,
 		})
 	}
-	return ords, nil
+
+	return result, nil
 }
+
+// Account returns AccountResolver implementation.
+func (r *Resolver) Account() AccountResolver { return &accountResolver{r} }
 
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
@@ -217,5 +332,6 @@ func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+type accountResolver struct{ *Resolver }
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }

@@ -15,6 +15,7 @@ type Catalog {
 
 type Order {
   id: String!
+  accountId: String!
   createdAt: Time!
   totalPrice: Float!
   products: [OrderedProduct!]!
